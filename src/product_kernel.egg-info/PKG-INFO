@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: product-kernel
+Version: 0.1.0
+Summary: Shared FastAPI plumbing (app factory, middlewares, in-memory adapters)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.110
+Requires-Dist: starlette>=0.36
+Requires-Dist: pydantic>=2.5
+
+# product-kernel (flat layout)
+
+Install with `pip install -e .` in this folder.
