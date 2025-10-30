@@ -1,6 +1,26 @@
 from __future__ import annotations
 from typing import Any, Callable, Dict, Type
 
+"""
+──────────────────────────────────────────────────────────────────────────────
+Simple Dependency Injection Registry
+──────────────────────────────────────────────────────────────────────────────
+Purpose:
+    Maintain a global mapping of types → provider functions.
+
+APIs:
+    - register(type, provider_fn)
+    - resolve(type) → instance
+
+Used by:
+    - RepoBase.__init_subclass__() → auto-registers repos
+    - autowire() → injects dependencies into services
+
+Usage:
+    register(MyRepo, lambda: MyRepo())
+    repo = resolve(MyRepo)
+"""
+
 # Simple global registry: Type -> provider function (returns an instance)
 _PROVIDERS: Dict[Type[Any], Callable[[], Any]] = {}
 

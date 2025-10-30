@@ -12,6 +12,10 @@ dependencies = [
   "fastapi>=0.110",
   "starlette>=0.36",
   "pydantic>=2.5",
+  "SQLAlchemy>=2.0",
+  "asyncpg",
+  "alembic",
+  "python-dotenv",
 ]
 
 [tool.setuptools]
@@ -19,3 +23,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.optional-dependencies]
+jwt = ["PyJWT>=2.8.0"]

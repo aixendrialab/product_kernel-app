@@ -2,6 +2,31 @@ import os, time, typing as t
 from functools import lru_cache
 import jwt  # PyJWT
 
+"""
+──────────────────────────────────────────────────────────────────────────────
+JwtProvider: Simple JWT Encode/Decode Service
+──────────────────────────────────────────────────────────────────────────────
+Purpose:
+    Provide a consistent JWT implementation (based on PyJWT).
+
+Features:
+    - Encodes claims with iat/exp fields.
+    - Decodes tokens and validates signature.
+    - Caches singleton provider via get_provider().
+
+Environment variables:
+    JWT_SECRET  → secret key (default: 'dev-secret')
+    JWT_ALG     → algorithm (default: HS256)
+    JWT_TTL     → default TTL seconds (default: 3600)
+
+Usage:
+    from product_kernel.security.jwt_provider import get_provider
+    jwt = get_provider()
+
+    token = jwt.encode({"uid": 1, "sub": "user@example.com"})
+    claims = jwt.decode(token)
+"""
+
 class JwtProvider:
     def __init__(self,
                  secret: str | None = None,

@@ -2,6 +2,31 @@ from __future__ import annotations
 from typing import Any, get_type_hints, Optional, get_origin, get_args, Type
 from .registry import resolve
 
+"""
+──────────────────────────────────────────────────────────────────────────────
+Automatic Dependency Injection (Autowiring)
+──────────────────────────────────────────────────────────────────────────────
+Purpose:
+    Inject dependencies into a class instance based on its type annotations.
+
+Mechanics:
+    - Reads class-level annotations
+    - For each attribute with a registered provider, sets instance.attr = provider()
+    - Skips already-initialized attributes
+    - Supports Optional[T]
+
+Used by:
+    BaseService → autowire(self) runs before each transactional method
+
+Example:
+    class ParentService(BaseService):
+        users: UsersRepo  # type hint triggers injection
+        pets: PetsRepo
+
+    svc = ParentService()
+    await svc.register(...)
+"""
+
 def _unwrap_optional(typ: Type[Any]) -> Type[Any]:
     origin = get_origin(typ)
     if origin is Optional:
