@@ -43,3 +43,14 @@ def set_sessionmaker(sm: async_sessionmaker[AsyncSession]) -> None:
     """Allow overriding sessionmaker (e.g., in FastAPI lifespan)."""
     global _sessionmaker
     _sessionmaker = sm
+
+def get_engine() -> AsyncEngine:
+    """
+    Return the global AsyncEngine (create lazily if not yet created).
+
+    Used by RepoBase when no ContextVar session is available.
+    """
+    global _engine
+    if _engine is None:
+        _engine = ensure_engine()
+    return _engine

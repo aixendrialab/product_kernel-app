@@ -24,6 +24,7 @@ def _load_env(app_root: str) -> None:
     # .dbstack.env first, then .env overrides
     try:
         from dotenv import load_dotenv
+
         load_dotenv(os.path.join(app_root, ".dbstack.env"))
         load_dotenv(os.path.join(app_root, ".env"), override=True)
         _log(f"📄 Loaded env from {app_root}/.dbstack.env and {app_root}/.env")
@@ -49,9 +50,9 @@ def _ensure_db_url() -> str:
     host = os.getenv("PG_HOST", "localhost")
     port = os.getenv("PG_PORT", "8432")
     user = os.getenv("PG_USER", "postgres")
-    pw   = os.getenv("PGPASSWORD", "postgres")
-    db   = os.getenv("PG_DB", "tos")
-    url  = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
+    pw = os.getenv("PGPASSWORD", "postgres")
+    db = os.getenv("PG_DB", "tos")
+    url = f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
     _log(f"⚙️  Constructed DATABASE_URL: {url}")
     return url
 
@@ -99,7 +100,9 @@ def run_alembic_env(autodiscover_roots: str | Iterable[str]) -> None:
         run_alembic_env(autodiscover_roots=["app", "app.domain"])
     """
     # Put app + kernel on sys.path
-    alembic_dir = Path(__file__).resolve().parent.parent.parent  # product_kernel/db/.. → product_kernel
+    alembic_dir = (
+        Path(__file__).resolve().parent.parent.parent
+    )  # product_kernel/db/.. → product_kernel
     app_root = Path(os.getcwd()).resolve()
     pk_src = alembic_dir  # already importable as installed package
     if str(app_root) not in sys.path:
@@ -125,11 +128,15 @@ def run_alembic_env(autodiscover_roots: str | Iterable[str]) -> None:
     all_models = []
     for root in roots:
         models = list(discover_models(root))
-        _log(f"📦 Root '{root}': discovered {len(models)} model classes → {[m.__name__ for m in models]}")
+        _log(
+            f"📦 Root '{root}': discovered {len(models)} model classes → {[m.__name__ for m in models]}"
+        )
         all_models.extend(models)
 
     if not all_models:
-        _log("⚠️  No SQLAlchemy models discovered. Expect only 'alembic_version' to exist.")
+        _log(
+            "⚠️  No SQLAlchemy models discovered. Expect only 'alembic_version' to exist."
+        )
 
     # Merge metadata and list table names
     metadatas = [Base.metadata] + [m.metadata for m in all_models]
@@ -153,7 +160,9 @@ def run_alembic_env(autodiscover_roots: str | Iterable[str]) -> None:
     if not has_revisions:
         _log("⚠️  No Alembic revisions found in alembic/versions.")
         if os.getenv("PK_ALEMBIC_FALLBACK_CREATE", "1") == "1":
-            _log("🛟 PK_ALEMBIC_FALLBACK_CREATE=1 → creating tables directly via metadata.create_all()")
+            _log(
+                "🛟 PK_ALEMBIC_FALLBACK_CREATE=1 → creating tables directly via metadata.create_all()"
+            )
             eng = create_engine(sync_url, poolclass=pool.NullPool, future=True)
             try:
                 with eng.begin() as conn:
@@ -162,19 +171,24 @@ def run_alembic_env(autodiscover_roots: str | Iterable[str]) -> None:
             finally:
                 eng.dispose()
         else:
-            _log("➡️  Add a revision under alembic/versions and run: alembic upgrade head")
+            _log(
+                "➡️  Add a revision under alembic/versions and run: alembic upgrade head"
+            )
 
     # --- Detect empty upgrade() and auto-create if needed ---
     else:
         try:
             from alembic.script import ScriptDirectory
+
             script_dir = ScriptDirectory.from_config(cfg)
             heads = script_dir.get_heads()
             if heads:
                 current_rev = script_dir.get_revision(heads[0])
                 upgrade_fn = getattr(current_rev.module, "upgrade", None)
                 if upgrade_fn and not upgrade_fn.__code__.co_consts[1:]:
-                    _log("🛠️  Detected empty upgrade() → creating tables directly from metadata.")
+                    _log(
+                        "🛠️  Detected empty upgrade() → creating tables directly from metadata."
+                    )
                     eng = create_engine(sync_url, poolclass=pool.NullPool, future=True)
                     with eng.begin() as conn:
                         target_metadata.create_all(conn, checkfirst=True)

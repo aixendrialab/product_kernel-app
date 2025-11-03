@@ -1,19 +1,23 @@
 # product_kernel/db/tx.py
 """
-Transactional Decorator
-────────────────────────────────────────────
-Wraps service methods in an explicit DB transaction.
-Intended for domain services, analogous to Spring @Transactional.
+Transactional decorator for service methods
+──────────────────────────────────────────────
+Explicitly wraps a service method in a commit/rollback boundary.
 """
-from __future__ import annotations
 from functools import wraps
-from typing import Callable, Any, Awaitable
-from product_kernel.db.context import session_in_transaction
+from product_kernel.db.context import get_session
 
-def transactional(fn: Callable[..., Awaitable[Any]]):
-    """Wraps async function inside session_in_transaction()"""
+
+def transactional(fn):
+    """Wraps async service methods in an explicit transaction."""
     @wraps(fn)
-    async def _w(*a, **kw):
-        async with session_in_transaction():
-            return await fn(*a, **kw)
-    return _w
+    async def wrapper(*args, **kwargs):
+        session = get_session()
+        try:
+            result = await fn(*args, **kwargs)
+            await session.commit()
+            return result
+        except Exception:
+            await session.rollback()
+            raise
+    return wrapper

@@ -6,6 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+import json
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from product_kernel.db.middleware import DBMiddleware
 from product_kernel.api.health_router import router as kernel_health_router
 from product_kernel.security.jwt_provider import get_provider
@@ -35,7 +39,7 @@ Responsibilities:
 # Request Logging Middleware (with inline JWT decoding)
 # ──────────────────────────────────────────────────────────────
 class RequestLoggerMiddleware:
-    """Logs request details and decodes JWT if available."""
+    """Logs request details, body (JSON-safe), and decodes JWT if available."""
 
     def __init__(self, app, allowlist: Set[str]):
         self.app = app
@@ -51,22 +55,51 @@ class RequestLoggerMiddleware:
         start_time = time.time()
         headers = dict(request.headers)
 
-        print("🛰️ [REQ]", request.method, request.url.path)
-        print("   ↳ Authorization:", headers.get("authorization", "<none>"))
-        print("   ↳ Origin:", headers.get("origin"))
-        print("   ↳ Content-Type:", headers.get("content-type"))
-        print("   ↳ Referer:", headers.get("referer"))
+        # ──────────────────────────────────────────────
+        # Capture the raw body before it’s consumed
+        # ──────────────────────────────────────────────
+        try:
+            body_bytes = await request.body()
+            body_str = body_bytes.decode("utf-8") if body_bytes else ""
+            if len(body_str) > 800:
+                body_str = body_str[:800] + "… [truncated]"
+            try:
+                parsed = json.loads(body_str) if body_str else None
+                body_repr = json.dumps(parsed, indent=None) if parsed is not None else "<empty>"
+            except Exception:
+                body_repr = body_str or "<non-JSON body>"
+        except Exception:
+            body_bytes = b""
+            body_repr = "<body read error>"
 
-        # 🔹 Skip auth check for allowlisted paths
+        print(f"🛰️ [REQ] {request.method} {path}")
+        print(f"   ↳ Authorization: {headers.get('authorization', '<none>')}")
+        print(f"   ↳ Origin: {headers.get('origin')}")
+        print(f"   ↳ Content-Type: {headers.get('content-type')}")
+        print(f"   ↳ Referer: {headers.get('referer')}")
+        print(f"   ↳ Body: {body_repr}")
+
+        # Reinject the body so downstream handlers can still read it
+        async def receive_reconstructed():
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+        scope["app"] = self.app  # ensure scope continuity
+        request._receive = receive_reconstructed  # type: ignore
+
+        # ──────────────────────────────────────────────
+        # Allowlisted endpoints skip auth
+        # ──────────────────────────────────────────────
         if any(path.startswith(p) for p in self.allowlist):
-            return await self.app(scope, receive, send)
+            return await self.app(scope, receive_reconstructed, send)
 
-        # 🔹 Try to decode JWT; reject if missing
+        # ──────────────────────────────────────────────
+        # JWT handling
+        # ──────────────────────────────────────────────
         auth = headers.get("authorization")
         if not auth or not auth.lower().startswith("bearer "):
-            return await JSONResponse(
-                {"detail": "Missing Authorization"}, status_code=401
-            )(scope, receive, send)
+            return await JSONResponse({"detail": "Missing Authorization"}, status_code=401)(
+                scope, receive_reconstructed, send
+            )
 
         token = auth.split(" ", 1)[1]
         try:
@@ -80,20 +113,23 @@ class RequestLoggerMiddleware:
                 f"(tenant={request.state.principal.tenant_id}, "
                 f"roles={request.state.principal.roles})"
             )
-        except Exception:
-            return await JSONResponse(
-                {"detail": "Invalid token"}, status_code=401
-            )(scope, receive, send)
+        except Exception as e:
+            print(f"⚠️ JWT decode error: {e}")
+            return await JSONResponse({"detail": "Invalid token"}, status_code=401)(
+                scope, receive_reconstructed, send
+            )
 
+        # ──────────────────────────────────────────────
+        # Continue request flow
+        # ──────────────────────────────────────────────
         try:
-            response = await self.app(scope, receive, send)
+            response = await self.app(scope, receive_reconstructed, send)
         finally:
             elapsed = (time.time() - start_time) * 1000
-            print(f"🛰️ [RES] {request.method} {request.url.path} ({elapsed:.2f} ms)\n")
+            print(f"🛰️ [RES] {request.method} {path} ({elapsed:.2f} ms)\n")
 
         return response
-
-
+    
 # ──────────────────────────────────────────────────────────────
 # App Factory
 # ──────────────────────────────────────────────────────────────

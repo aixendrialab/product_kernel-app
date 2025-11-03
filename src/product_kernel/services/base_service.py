@@ -1,54 +1,73 @@
 # product_kernel/services/base_service.py
+"""
+Base class for all domain services
+──────────────────────────────────────────────
+Responsibilities:
+    • Provide the active request-scoped AsyncSession
+    • Support dependency autowiring for repositories
+    • Offer optional utilities like commit()
+    • Allow standalone (CLI/test) session binding via new_session()
+──────────────────────────────────────────────
+"""
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Any
-from product_kernel.db.context import get_session, set_session, reset_session
-from product_kernel.db.session import async_session  # your lazy session factory
-from product_kernel.db.context import session_in_transaction as transactional_scope
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from product_kernel.db.context import get_session, set_session, clear_session
+from product_kernel.db.session import async_session
 from product_kernel.di.inject import autowire
-import asyncio
-from functools import wraps
 
-def non_transactional(fn):
-    setattr(fn, "_pk_non_tx", True)
-    return fn
-
-def _tx_wrap(fn):
-    if not asyncio.iscoroutinefunction(fn):
-        return fn
-    @wraps(fn)
-    async def w(self, *args, **kwargs):
-        autowire(self)
-        async with transactional_scope():
-            return await fn(self, *args, **kwargs)
-    return w
 
 class BaseService:
-    # Wrap all async callables on subclass at first use
-    def __getattribute__(self, name: str):
-        attr = super().__getattribute__(name)
-        if callable(attr) and getattr(attr, "__name__", "").startswith("_") is False:
-            if getattr(attr, "_pk_non_tx", False):
-                return attr
-            return _tx_wrap(attr)
-        return attr
+    """
+    Base class for all services.
 
+    Provides:
+      - request-scoped DB session (from ContextVar)
+      - dependency autowiring for repos
+      - optional utilities like commit()
+    """
+
+    def __init__(self, session: AsyncSession | None = None):
+        # Use existing request session (middleware) or injected session
+        self.session: AsyncSession = session or get_session()
+        autowire(self)
+
+    # ──────────────────────────────────────────────
+    # Common utilities
+    # ──────────────────────────────────────────────
+    async def commit(self) -> None:
+        """Manually commit the current session."""
+        await self.session.commit()
+
+    async def rollback(self) -> None:
+        """Manually rollback the current session."""
+        await self.session.rollback()
+
+    # ──────────────────────────────────────────────
+    # Standalone usage (CLI, seeders, tests)
+    # ──────────────────────────────────────────────
     @classmethod
     @asynccontextmanager
-    async def new_session(cls) -> AsyncIterator[Any]:
+    async def new_session(cls) -> AsyncIterator[AsyncSession]:
         """
-        Bind a session to ContextVar WITHOUT starting a transaction.
-        Transactions are owned by @transactional wrappers on methods.
+        Bind a temporary AsyncSession to ContextVar for standalone tasks.
+        Middleware handles this automatically in FastAPI apps.
         """
         try:
-            # Already bound (FastAPI request)? Reuse.
             sess = get_session()
+            # Already bound (HTTP request or external context)
             yield sess
         except RuntimeError:
-            # Standalone mode (seeders/CLI/jobs)
+            # No bound session → create one manually
             async with async_session() as sess:
-                token = set_session(sess)
+                set_session(sess)
                 try:
                     yield sess
+                    await sess.commit()
+                except Exception:
+                    await sess.rollback()
+                    raise
                 finally:
-                    reset_session(token)
+                    clear_session()
